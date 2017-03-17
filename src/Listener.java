@@ -27,6 +27,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.nio.Buffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -39,7 +40,7 @@ public class Listener extends Thread{
 	private boolean running;
 
 	public static void main(String[] args) {
-		Listener myServer = new Listener(8081);
+		Listener myServer = new Listener(8085);
 
 
 
@@ -81,7 +82,7 @@ public class Listener extends Thread{
 			// Open the Socket
 			serverSocket = new ServerSocket(port);
 
-			// Wait for timeout time for client to connect (optional)
+			// Set the timeout
 			serverSocket.setSoTimeout(100000);
 			System.out.println("Waiting for client on port " + serverSocket.getLocalPort() + "..");
 			server = serverSocket.accept();
@@ -108,88 +109,90 @@ public class Listener extends Thread{
 	 */
 	public void listen(){
 		try{
-			URL url = null;
-			HttpURLConnection connection = null;
+			
+			// Initalize everything
+			InputStream proxyToClientIS = server.getInputStream();
+			OutputStream proxyToClientOS = server.getOutputStream();
+		
 
 
-			InputStream inputStream = server.getInputStream();
+			/*
+			 * Get the request from the client
+			 */
+			
 			byte[] buffer = new byte[2048];
 			int bytesRead;
-			String string = "";
+			String requestString = "";
 			while(running){
-				while((bytesRead = inputStream.read(buffer)) != -1){
-					string = "";
+				while((bytesRead = proxyToClientIS.read(buffer)) != -1){
+					requestString = "";
 					for(int i=0;i<bytesRead;i++){
-						string += String.valueOf((char)buffer[i]);
+						requestString += String.valueOf((char)buffer[i]);
 					}
-					System.out.println(string);
-					String urlString = string.substring(string.indexOf(' ')+1);
+					System.out.println("Request Received: ");
+					System.out.println(requestString + "\n");
+
+
+					// Parse out URL
+
+					// remove GET and space
+					String urlString = requestString.substring(requestString.indexOf(' ')+1);
+
+					// Remove everything past next space
 					urlString = urlString.substring(0, urlString.indexOf(' '));
-					System.out.println("URL String = " + urlString);
-					System.out.println();
-					url = new URL(urlString);
-					connection = (HttpURLConnection)url.openConnection();
-					connection.setRequestProperty("Content-Type", 
+
+					System.out.println("URL String = " + urlString + "\n");
+					
+					
+					
+					/*
+					 * Create a connection the remote server to retrieve page
+					 */
+
+					URL remoteURL = null;
+					HttpURLConnection proxyToServerCon = null;
+					
+					remoteURL = new URL(urlString);
+					proxyToServerCon = (HttpURLConnection)remoteURL.openConnection();
+					proxyToServerCon.setRequestProperty("Content-Type", 
 							"application/x-www-form-urlencoded");
 					;
-					connection.setRequestProperty("Content-Language", "en-US");  
+					proxyToServerCon.setRequestProperty("Content-Language", "en-US");  
 
-					connection.setUseCaches(false);
-					connection.setDoOutput(true);
+					proxyToServerCon.setUseCaches(false);
+					proxyToServerCon.setDoOutput(true);
 
 
-					// Get response
-					InputStream is = connection.getInputStream();
-					BufferedReader rd = new BufferedReader(new InputStreamReader(is));
-					StringBuilder response = new StringBuilder(); // or StringBuffer if Java version 5+
-					String line;
-					while ((line = rd.readLine()) != null) {
-						response.append(line);
-						response.append('\r');
+					// Get response from remote server
+					InputStream proxyToServerIS = proxyToServerCon.getInputStream();
+					
+					/*
+					 *  Relay serverToProxyIS to proxyToClientOS
+					 */
+					
+					// Create buffer to hold chunks of retireved data
+					byte by[] = new byte[32768];
+					
+					// Get first chunk of data
+					int index = proxyToServerIS.read(by,0,32768);
+					
+					System.out.println("Sending results back to client");
+					
+					// Repeat until end of proxyToServerIS
+					while(index != -1){
+						// Send chunk to client
+						proxyToClientOS.write(by,0,index);
+						// Get next chunk
+						index = proxyToServerIS.read(by,0,32768);
 					}
-					rd.close();
-					System.out.println();
-					System.out.println(response.toString());
-
-					// Write to file
-					BufferedWriter bw = null;
-					try {
-						File file = new File("results.html");
-
-						/* This logic will make sure that the file 
-						 * gets created if it is not present at the
-						 * specified location*/
-						if (!file.exists()) {
-							file.createNewFile();
-						}
-
-						FileWriter fw = new FileWriter(file);
-						bw = new BufferedWriter(fw);
-						bw.write(response.toString());
-
-						System.out.println("About to write to output stream");
-						try (OutputStream out = server.getOutputStream()) {
-							Path path = file.toPath();
-							long bytesWritten = Files.copy(path, out);
-							out.flush();
-							System.out.println(bytesWritten + " written to output stream");
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
-
-					} catch (IOException ioe) {
-						ioe.printStackTrace();
-					}
-					finally
-					{ 
-						try{
-							if(bw!=null)
-								bw.close();
-						}catch(Exception ex){
-							System.out.println("Error in closing the BufferedWriter"+ex);
-						}
-					}
+					
+					proxyToClientOS.flush();
+					
+					System.out.println("Results sent successfully");
+					
+					break;
 				}
+				break;
 			}
 		} catch (IOException e) {
 			// TODO: handle exception
