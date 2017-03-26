@@ -16,6 +16,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
 
@@ -39,7 +40,7 @@ public class Proxy implements Runnable{
 	static HashMap<String, File> cache;
 	static HashMap<String, String> blockedSites;
 
-
+	static ArrayList<Thread> servicingThreads;
 
 
 	public Proxy(int port) {
@@ -47,7 +48,8 @@ public class Proxy implements Runnable{
 		// Load in hash map containing previously cached sites and blocked Sites
 		cache = new HashMap<>();
 		blockedSites = new HashMap<>();
-
+		servicingThreads = new ArrayList<>();
+		
 		// Start manager
 		new Thread(this).start();
 
@@ -120,10 +122,9 @@ public class Proxy implements Runnable{
 			try {
 				// Blocks until a connection is made
 				Socket socket = serverSocket.accept();
-
-				//System.out.println("Connection found: " + socket.getRemoteSocketAddress());
-				//System.out.println("Creating Handler [" + handlerID + "]" );
-				new Thread(new RequestHandler(socket)).start();
+				Thread thread = new Thread(new RequestHandler(socket));
+				servicingThreads.add(thread);
+				thread.start();
 				handlerID++;	
 			} catch (SocketException e) {
 				System.out.println("Server closing..");
@@ -150,6 +151,16 @@ public class Proxy implements Runnable{
 			objectOutputStream2.writeObject(blockedSites);
 			objectOutputStream2.close();
 			fileOutputStream2.close();
+			
+			for(Thread thread : servicingThreads){
+				if(thread.isAlive()){
+					try{
+						thread.join();
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+			}
 
 		} catch (IOException e) {
 			System.out.println("Error saving cache");

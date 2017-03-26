@@ -5,12 +5,16 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 
 import javax.imageio.ImageIO;
@@ -34,9 +38,11 @@ public class RequestHandler implements Runnable {
 	public RequestHandler(Socket clientSocket){
 		this.clientSocket = clientSocket;
 		try{
+			this.clientSocket.setSoTimeout(10000);
 			proxyToClientBr = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			proxyToClientBw = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
-		} catch (IOException e) {
+		} 
+		catch (IOException e) {
 			e.printStackTrace();
 		}
 	}
@@ -99,7 +105,7 @@ public class RequestHandler implements Runnable {
 				//System.out.println("Cached File Found - Not making HTTP Request to remote server");
 				sendCachedPageToClient(file);
 			} else {
-			//	System.out.println("Webpage not contained in cache - going to remote server");
+				//	System.out.println("Webpage not contained in cache - going to remote server");
 				sendNonCachedToClient(urlString);
 			}
 			//System.out.println("Results sent successfully\n\n");
@@ -128,18 +134,18 @@ public class RequestHandler implements Runnable {
 							"\r\n";
 					proxyToClientBw.write(response);
 					proxyToClientBw.flush();
-					
+
 					ImageIO.write(image, fileExtension.substring(1), clientSocket.getOutputStream());
 				}
 			} else {
 				BufferedReader cachedFileBufferedReader = new BufferedReader(new InputStreamReader(new FileInputStream(cachedFile)));
-				
+
 				response = "HTTP/1.0 200 OK\n" +
 						"Proxy-agent: ProxyServer/1.0\n" +
 						"\r\n";
 				proxyToClientBw.write(response);
 				proxyToClientBw.flush();
-				
+
 				String line;
 				while((line = cachedFileBufferedReader.readLine()) != null){
 					proxyToClientBw.write(line);
@@ -149,7 +155,7 @@ public class RequestHandler implements Runnable {
 					cachedFileBufferedReader.close();
 				}	
 			}
-		
+
 
 			// Close Down Resources
 			if(proxyToClientBw != null){
@@ -238,7 +244,7 @@ public class RequestHandler implements Runnable {
 					System.out.println("Sending Image to client" + fileName);
 					// Cache it
 					ImageIO.write(image, fileExtension.substring(1), fileToCache);
-					
+
 					System.out.println("SENDING SUCCESS CODE for " + fileName);
 					String line = "HTTP/1.0 200 OK\n" +
 							"Proxy-agent: ProxyServer/1.0\n" +
@@ -246,9 +252,9 @@ public class RequestHandler implements Runnable {
 					proxyToClientBw.write(line);
 					proxyToClientBw.flush();
 					System.out.println("Success code for " + fileName + " sent");
-				
+
 					ImageIO.write(image, fileExtension.substring(1), clientSocket.getOutputStream());
-				
+
 
 				} else {
 					System.out.println("Sending 404 to client " + fileName);
@@ -273,7 +279,7 @@ public class RequestHandler implements Runnable {
 
 				// Create Buffered Reader from input stream to remote server
 				BufferedReader proxyToServerBR = new BufferedReader(new InputStreamReader(proxyToServerCon.getInputStream()));
-	
+
 				// Send success code 
 				System.out.println("SENDING SUCCESS CODE for " + fileName);
 				String line = "HTTP/1.0 200 OK\n" +
@@ -297,8 +303,8 @@ public class RequestHandler implements Runnable {
 					proxyToServerBR.close();
 				}
 			}
-			
-			
+
+
 
 
 			if(caching){
@@ -332,16 +338,21 @@ public class RequestHandler implements Runnable {
 		System.out.println("Port = " + port);
 
 		try{
+			for(int i=0;i<5;i++){
+				// read rest of initial request
+				System.out.println("rest of get : " + proxyToClientBr.readLine());
+			}
+
+
 			InetAddress address = InetAddress.getByName(url);
 			Socket proxyToServerSocket = new Socket(address, port);
 
 
-			System.out.println("Writing to client");
-			String line = "HTTP/1.0 200 Connection established\n" +
-					"User-Agent: ProxyServer/1.0\n" +
+			String line = "HTTP/1.0 200 Connection established\r\n" +
+					"Proxy-Agent: ProxyServer/1.0\r\n" +
 					"\r\n";
 			proxyToClientBw.write(line);
-			System.out.println("Wrote to client");
+			proxyToClientBw.flush();
 
 
 
@@ -357,21 +368,43 @@ public class RequestHandler implements Runnable {
 
 
 			// Create new thread to listen to client and relay to server
-			ClientToServerHttps clientToServerHttps = new ClientToServerHttps(
+			/*			ClientToServerHttps clientToServerHttps = new ClientToServerHttps(
 					proxyToClientBr, proxyToServerBW);
 			new Thread(clientToServerHttps).start();
-
-			// Listen to remote server and relay to client
-			System.out.println("Starting to lsiten");
-			while((line = proxyToServerBR.readLine()) != null){
+			
+						while((line = proxyToServerBR.readLine()) != null){
 				// Send data to client
 				System.out.println("Server to proxy line : " + line);
 				proxyToClientBw.write(line);
 				proxyToClientBw.flush();
-
 			}
 
+			System.out.println("Skipped");
+			*/
 			
+			
+			
+			ClientToServerHttps clientToServerHttps = new ClientToServerHttps(clientSocket.getInputStream(), proxyToServerSocket.getOutputStream());
+			new Thread(clientToServerHttps).start();
+			// Listen to remote server and relay to client
+			
+
+			try {
+				byte[] buffer = new byte[4096];
+				int read;
+				do {
+					read = proxyToServerSocket.getInputStream().read(buffer);
+					if (read > 0) {
+						clientSocket.getOutputStream().write(buffer, 0, read);
+						if (proxyToServerSocket.getInputStream().available() < 1) {
+							clientSocket.getOutputStream().flush();
+						}
+					}
+				} while (read >= 0);
+			}
+			catch (IOException e) {
+				e.printStackTrace();
+			}
 
 
 			// Close Down Resources
@@ -390,42 +423,105 @@ public class RequestHandler implements Runnable {
 			if(proxyToClientBw != null){
 				proxyToClientBw.close();
 			}*/
+		} catch (SocketTimeoutException e) {
+			String line = "HTTP/1.0 504 Timeout Occured after 10s\n" +
+					"User-Agent: ProxyServer/1.0\n" +
+					"\r\n";
+			try{
+				proxyToClientBw.write(line);
+				proxyToClientBw.flush();
+			} catch (IOException ioe) {
+				ioe.printStackTrace();
+			}
 		} catch (Exception e){
 			System.out.println("Error on HTTPS : " + urlString );
 			e.printStackTrace();
 		}
 	}
 
-	class ClientToServerHttps implements Runnable{
 
-		// Read from client to proxy
+
+
+	/**
+	 * Listen to data from client and transmit it to server
+	 */
+	/*	class ClientToServerHttps implements Runnable{
+
 		BufferedReader proxyToClientBR;
-
-		// Write from proxy to Server
 		BufferedWriter proxyToServerBW;
 
-		public ClientToServerHttps(BufferedReader proxyToClientBR, BufferedWriter proxyToClientBW) {
-			System.out.println("Starting Client to Server transmission thread");
+		public ClientToServerHttps(BufferedReader proxyToClientBR, BufferedWriter proxyToServerBW) {
+			this.proxyToClientBR = proxyToClientBR;
+			this.proxyToServerBW = proxyToServerBW;
 		}
 
 		@Override
 		public void run(){
 			// Process data from Client and send to server
 			String line;
+
 			try{
 				while((line = proxyToClientBR.readLine()) != null){
-					// Send data to client
 					System.out.println("Client to proxy Line = " + line);
 					proxyToServerBW.write(line);
 					proxyToServerBW.flush();
+				//	System.out.println("sending data from client to  : " + proxyToServerBW.);
 				}
-			} catch (Exception e) {
+			}
+			catch (SocketTimeoutException s) {
+				String error = "HTTP/1.0 504 Timeout Occured after 10s\n" +
+						"User-Agent: ProxyServer/1.0\n" +
+						"\r\n";
+				try{
+					proxyToClientBw.write(error);
+					proxyToClientBw.flush();
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+				}
+			}
+			catch (Exception e) {
 				System.out.println("Error in reading from client https");
 				e.printStackTrace();
 			}
 		}
 	}
+}*/
+
+	/**
+	 * Listen to data from client and transmit it to server
+	 */
+	class ClientToServerHttps implements Runnable{
+
+		InputStream proxyToClientIS;
+		OutputStream proxyToServerOS;
+
+		public ClientToServerHttps(InputStream proxyToClientIS, OutputStream proxyToServerOS) {
+			this.proxyToClientIS = proxyToClientIS;
+			this.proxyToServerOS = proxyToServerOS;
+		}
+
+		@Override
+		public void run(){
+			try {
+				byte[] buffer = new byte[4096];
+				int read;
+				do {
+					read = proxyToClientIS.read(buffer);
+					if (read > 0) {
+						proxyToServerOS.write(buffer, 0, read);
+						if (proxyToClientIS.available() < 1) {
+							proxyToServerOS.flush();
+						}
+					}
+				} while (read >= 0);
+			}
+			catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
 }
+
 
 
 

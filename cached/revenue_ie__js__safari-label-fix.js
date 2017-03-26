@@ -1,0 +1,1 @@
+// JavaScript Documentif (navigator.userAgent.indexOf('Safari') != -1) {  var labels = document.getElementsByTagName('label');  YAHOO.util.Event.addListener(labels, 'click', _fixLabels);  }function _fixLabels(ev) {  	var tar = YAHOO.util.Event.getTarget(ev, 1);  	var idName = tar.getAttribute('for');  	var id = YAHOO.util.Dom.get(idName);  	if (id) 	{ 		id.click(); 	}}
