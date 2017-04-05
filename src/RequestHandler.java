@@ -14,7 +14,6 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.URL;
-
 import javax.imageio.ImageIO;
 
 public class RequestHandler implements Runnable {
@@ -200,9 +199,7 @@ public class RequestHandler implements Runnable {
 	private void sendNonCachedToClient(String urlString){
 
 		try{
-			// Create the URL
-			URL remoteURL = new URL(urlString);
-
+			
 			// Compute a logical file name as per schema
 			// This allows the files on stored on disk to resemble that of the URL it was taken from
 			int fileExtensionIndex = urlString.lastIndexOf(".");
@@ -238,8 +235,6 @@ public class RequestHandler implements Runnable {
 			File fileToCache = null;
 			BufferedWriter fileToCacheBW = null;
 
-			// TODO: Parse out the ?ver=*.*.* into file name so they wont break this
-			// At the moment just not caching anything that couldn't be parsed
 			try{
 				// Create File to cache 
 				fileToCache = new File("cached/" + fileName);
@@ -266,6 +261,8 @@ public class RequestHandler implements Runnable {
 			// Check if file is an image
 			if((fileExtension.contains(".png")) || fileExtension.contains(".jpg") ||
 					fileExtension.contains(".jpeg") || fileExtension.contains(".gif")){
+				// Create the URL
+				URL remoteURL = new URL(urlString);
 				BufferedImage image = ImageIO.read(remoteURL);
 
 				if(image != null) {
@@ -297,6 +294,9 @@ public class RequestHandler implements Runnable {
 
 			// File is a text file
 			else {
+								
+				// Create the URL
+				URL remoteURL = new URL(urlString);
 				// Create a connection to remote server
 				HttpURLConnection proxyToServerCon = (HttpURLConnection)remoteURL.openConnection();
 				proxyToServerCon.setRequestProperty("Content-Type", 
@@ -304,11 +304,11 @@ public class RequestHandler implements Runnable {
 				proxyToServerCon.setRequestProperty("Content-Language", "en-US");  
 				proxyToServerCon.setUseCaches(false);
 				proxyToServerCon.setDoOutput(true);
-
+			
 				// Create Buffered Reader from remote Server
 				BufferedReader proxyToServerBR = new BufferedReader(new InputStreamReader(proxyToServerCon.getInputStream()));
-
 				
+
 				// Send success code to client
 				String line = "HTTP/1.0 200 OK\n" +
 						"Proxy-agent: ProxyServer/1.0\n" +
@@ -413,7 +413,6 @@ public class RequestHandler implements Runnable {
 			httpsClientToServer.start();
 			
 			
-			
 			// Listen to remote server and relay to client
 			try {
 				byte[] buffer = new byte[4096];
@@ -437,7 +436,7 @@ public class RequestHandler implements Runnable {
 
 
 			// Close Down Resources
-			/*			if(proxyToServerSocket != null){
+			if(proxyToServerSocket != null){
 				proxyToServerSocket.close();
 			}
 
@@ -451,7 +450,7 @@ public class RequestHandler implements Runnable {
 
 			if(proxyToClientBw != null){
 				proxyToClientBw.close();
-			}*/
+			}
 			
 			
 		} catch (SocketTimeoutException e) {

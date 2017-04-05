@@ -20,10 +20,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
 
-/*
- * Current Problems
- * 1
- */
 
 /**
  * The Proxy creates a Server Socket which will wait for connections on the specified port.
