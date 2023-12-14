@@ -374,9 +374,20 @@ public class RequestHandler implements Runnable {
 			// Only first line of HTTPS request has been read at this point (CONNECT *)
 			// Read (and throw away) the rest of the initial data on the stream
 			for(int i=0;i<5;i++){
-				proxyToClientBr.readLine();
+				try {
+					String line = proxyToClientBr.readLine();
+					if (line == null) {
+						System.out.println("No data available from proxyToClientBr");
+					}
+				} catch (SocketTimeoutException e) {
+					// Handle the timeout exception (retry, skip, or take appropriate action)
+					System.out.println("Timeout exception");
+					e.printStackTrace();
+					continue;
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			}
-
 			// Get actual IP associated with this URL through DNS
 			InetAddress address = InetAddress.getByName(url);
 			
